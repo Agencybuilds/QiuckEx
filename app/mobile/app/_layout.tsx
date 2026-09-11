@@ -26,8 +26,20 @@ import { EnvironmentProvider } from "../contexts/EnvironmentContext";
 import { SessionProvider } from "../contexts/SessionContext";
 import { GlobalNetworkBanner } from "../components/wallet/GlobalNetworkBanner";
 import { WalletSyncBridge } from "../components/wallet/WalletSyncBridge";
+import { useDeviceTokenRegistration } from "../hooks/useDeviceTokenRegistration";
+import { registerDeviceTokenQueueHandlers } from "../services/device-token-registration";
+
+// Register offline-queue handlers for device-token register/deregister
+// retries as early as possible, so a crash mid-boot still leaves the queue
+// primed for the next flush.
+registerDeviceTokenQueueHandlers();
 
 import { resolveDeepLink, type DeepLinkRoute } from "@/utils/deep-link-routing";
+import { initializeCrashMonitoring } from "../services/crash-monitoring";
+import { IS_DEBUG_BUILD } from "../src/config/build";
+
+// Initialize crash monitoring as early as possible to catch boot exceptions
+initializeCrashMonitoring();
 import {
   routeFromNotificationResponse,
   parsePushNotificationPayload,
@@ -226,6 +238,7 @@ function AppShell() {
 
   useDeepLinkHandler(enqueueRoute, enqueueError);
   useNotificationTapRouting(enqueueRoute);
+  useDeviceTokenRegistration();
 
   if (onboardingLoading) {
     return null; // Show loading screen while checking onboarding status
@@ -246,11 +259,18 @@ function AppShell() {
         <Stack.Screen name="escrow/[id]" />
         <Stack.Screen name="listing/[id]" />
         <Stack.Screen name="inbox" />
-        <Stack.Screen name="notification-debug" />
-        <Stack.Screen name="deep-link-debug" />
+        {/* Debug screens are only registered in development/internal builds.
+            In production builds they are absent, so any attempt to reach them
+            resolves to the not-found state. See src/config/build.ts. */}
+        {IS_DEBUG_BUILD ? (
+          <>
+            <Stack.Screen name="notification-debug" />
+            <Stack.Screen name="deep-link-debug" />
+            <Stack.Screen name="qa-smoke-checklist" />
+            <Stack.Screen name="offline-queue-inspector" />
+          </>
+        ) : null}
         <Stack.Screen name="link-error" />
-        <Stack.Screen name="qa-smoke-checklist" />
-        <Stack.Screen name="offline-queue-inspector" />
         <Stack.Screen name="contacts" />
         <Stack.Screen name="add-contact" />
         <Stack.Screen name="edit-contact" />

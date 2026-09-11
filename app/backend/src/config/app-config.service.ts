@@ -210,6 +210,14 @@ export class AppConfigService {
   }
 
   /**
+   * GitHub webhook secret (optional). When unset, the deployment webhook
+   * endpoint is unavailable and returns 503.
+   */
+  get githubWebhookSecret(): string | undefined {
+    return this.configService.get("GITHUB_WEBHOOK_SECRET", { infer: true });
+  }
+
+  /**
    * Max usernames per wallet (optional). When not set, returns undefined (no limit).
    */
   get maxUsernamesPerWallet(): number | undefined {
@@ -247,6 +255,53 @@ export class AppConfigService {
    */
   get reconciliationBatchSize(): number {
     return this.configService.get("RECONCILIATION_BATCH_SIZE", { infer: true });
+  }
+
+  /**
+   * Whether the scheduled reconciliation worker is enabled (BE-124).
+   */
+  get reconciliationEnabled(): boolean {
+    return this.configService.get("RECONCILIATION_ENABLED", { infer: true });
+  }
+
+  /**
+   * Cron expression for scheduled reconciliation runs (BE-124).
+   */
+  get reconciliationCronExpression(): string {
+    return this.configService.get("RECONCILIATION_CRON_EXPRESSION", {
+      infer: true,
+    });
+  }
+
+  /**
+   * Payment count discrepancy that raises a drift alert when exceeded (BE-124).
+   */
+  get reconciliationDriftCountThreshold(): number {
+    return this.configService.get("RECONCILIATION_DRIFT_COUNT_THRESHOLD", {
+      infer: true,
+    });
+  }
+
+  /**
+   * Payment amount discrepancy (in stroops) that raises a drift alert when
+   * exceeded. Kept as a string so it can preserve full precision for BigInt
+   * comparisons (BE-124).
+   */
+  get reconciliationDriftAmountThresholdStroops(): string {
+    return this.configService.get(
+      "RECONCILIATION_DRIFT_AMOUNT_THRESHOLD_STROOPS",
+      { infer: true },
+    );
+  }
+
+  /**
+   * Consecutive failed or skipped reconciliation runs that raise an alert (BE-124).
+   */
+  get reconciliationConsecutiveFailureAlertThreshold(): number {
+    return this.configService.get(
+      "RECONCILIATION_CONSECUTIVE_FAILURE_ALERT_THRESHOLD",
+      { infer: true },
+    );
   }
 
   /**
@@ -328,6 +383,27 @@ export class AppConfigService {
   }
 
   /**
+   * Whether the dead letter queue depth/age monitor is enabled
+   */
+  get dlqMonitorEnabled(): boolean {
+    return this.configService.get("DLQ_MONITOR_ENABLED", { infer: true });
+  }
+
+  /**
+   * Dead letter queue depth (per job type) that triggers an alert
+   */
+  get dlqAlertDepthThreshold(): number {
+    return this.configService.get("DLQ_ALERT_DEPTH_THRESHOLD", { infer: true });
+  }
+
+  /**
+   * Age in ms of the oldest dead-lettered job (per job type) that triggers an alert
+   */
+  get dlqAlertAgeThresholdMs(): number {
+    return this.configService.get("DLQ_ALERT_AGE_THRESHOLD_MS", { infer: true });
+  }
+
+  /**
    * Days to retain abuse signals before auto-pruning
    */
   get abuseSignalRetentionDays(): number {
@@ -361,6 +437,24 @@ export class AppConfigService {
     return this.configService.get("ABUSE_SIGNAL_HASH_SALT", { infer: true });
   }
 
+  /**
+   * Retention window (hours) for completed idempotency key records (BE-109)
+   */
+  get idempotencyRetentionHours(): number {
+    return this.configService.get("IDEMPOTENCY_RETENTION_HOURS", {
+      infer: true,
+    });
+  }
+
+  /**
+   * Overlap window (hours) for key rotation grace period (BE-118)
+   */
+  get apiKeyRotationOverlapHours(): number {
+    return this.configService.get("API_KEY_ROTATION_OVERLAP_HOURS", {
+      infer: true,
+    });
+  }
+
   // ====================================================================
   // NEW ACCESSORS FOR BOOTSTRAP PAYLOAD
   // ====================================================================
@@ -377,6 +471,31 @@ export class AppConfigService {
    */
   get appVersion(): string {
     return this.configService.get("APP_VERSION", { infer: true }) || process.env.npm_package_version || "1.0.0";
+  }
+
+  get mobileMinSupportedVersion(): string {
+    return this.configService.get("MOBILE_MIN_SUPPORTED_VERSION", { infer: true });
+  }
+
+  get mobileRecommendedVersion(): string {
+    return this.configService.get("MOBILE_RECOMMENDED_VERSION", { infer: true });
+  }
+
+  get mobileLatestVersion(): string {
+    return this.configService.get("MOBILE_LATEST_VERSION", { infer: true });
+  }
+
+  get mobileIosStoreUrl(): string {
+    return this.configService.get("MOBILE_IOS_STORE_URL", { infer: true });
+  }
+
+  get mobileAndroidStoreUrl(): string {
+    return this.configService.get("MOBILE_ANDROID_STORE_URL", { infer: true });
+  }
+
+  get mobileReleaseNotes(): string[] {
+    const raw = this.configService.get("MOBILE_RELEASE_NOTES", { infer: true });
+    return raw ? raw.split("|").map((note) => note.trim()).filter(Boolean) : [];
   }
 
   /**
@@ -404,5 +523,48 @@ export class AppConfigService {
         ? "Test SDF Network ; September 2015"
         : "Public Global Stellar Network ; September 2015")
     );
+  }
+
+  // ── Export artifact storage (BE-102) ───────────────────────────────────────
+
+  /** Retention period for export artifacts in object storage (hours). */
+  get exportArtifactTtlHours(): number {
+    return this.configService.get('EXPORT_ARTIFACT_TTL_HOURS', { infer: true });
+  }
+
+  /**
+   * HMAC-SHA256 secret used to sign export download tokens.
+   * Must be at least 32 characters.  Rotate by cycling this env var.
+   */
+  get exportDownloadSecret(): string {
+    return this.configService.get('EXPORT_DOWNLOAD_SECRET', { infer: true });
+  }
+
+  // ── OpenTelemetry tracing (BE-113) ─────────────────────────────────────────
+  // Note: the tracing SDK itself boots in src/tracing/tracing.ts before Nest's
+  // DI container exists, so it reads process.env directly via
+  // resolveOtelConfig(). These getters exist so the rest of the app (and
+  // tests) can inspect the same settings through the usual typed config.
+
+  /** Root span sampling ratio (0.0-1.0). Kept low by default for overhead. */
+  get otelTraceSampleRate(): number {
+    return this.configService.get('OTEL_TRACE_SAMPLE_RATE', { infer: true });
+  }
+
+  get otelServiceName(): string {
+    return this.configService.get('OTEL_SERVICE_NAME', { infer: true });
+  }
+
+  /** OTLP/HTTP traces endpoint override, if explicitly configured. */
+  get otelExporterOtlpTracesEndpoint(): string | undefined {
+    return this.configService.get('OTEL_EXPORTER_OTLP_TRACES_ENDPOINT', {
+      infer: true,
+    });
+  }
+
+  get otelExporterOtlpEndpoint(): string | undefined {
+    return this.configService.get('OTEL_EXPORTER_OTLP_ENDPOINT', {
+      infer: true,
+    });
   }
 }

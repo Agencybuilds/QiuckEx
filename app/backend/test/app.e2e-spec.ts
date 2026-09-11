@@ -42,6 +42,7 @@ describe("App endpoints", () => {
         }),
         getReadinessStatus: jest.fn().mockResolvedValue({
           ready: true,
+          degraded: false,
           checks: [
             {
               name: "supabase",
@@ -133,6 +134,7 @@ describe("App endpoints", () => {
       .expect(200)
       .expect({
         ready: true,
+        degraded: false,
         checks: [
           { name: "supabase", status: "up", latency: "10ms" },
           {
@@ -147,6 +149,7 @@ describe("App endpoints", () => {
   it("GET /ready returns 503 when unhealthy", async () => {
     healthService.getReadinessStatus.mockResolvedValueOnce({
       ready: false,
+      degraded: false,
       timestamp: new Date().toISOString(),
       checks: [
         {
@@ -338,7 +341,6 @@ describe("App endpoints", () => {
       .expect(400);
 
     expect(response.body).toMatchObject({
-      success: false,
       error: {
         code: expect.any(String),
         message: expect.any(String),

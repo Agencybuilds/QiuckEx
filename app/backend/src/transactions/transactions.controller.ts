@@ -8,6 +8,7 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
   UsePipes,
   ValidationPipe,
 } from "@nestjs/common";
@@ -22,11 +23,20 @@ import { HorizonService } from "./horizon.service";
 
 import { ApiKeyGuard } from "../auth/guards/api-key.guard";
 import { TESTNET_CONTRACT_WRITES_FLAG } from "../feature-flags/contract-write-kill-switch.constants";
+import { EmergencyClassification } from "../feature-flags/emergency-entrypoint-registry";
 import { NetworkSafetyGuard } from "../feature-flags/network-safety.guard";
 import { RequiresFlag } from "../feature-flags/requires-flag.decorator";
-import { ComposeTransactionDto, SimulateOperationDto, SubmitSignedTransactionDto } from "./dto/compose-transaction.dto";
+import {
+  ComposeTransactionDto,
+  SimulateOperationDto,
+  SubmitSignedTransactionDto,
+} from "./dto/compose-transaction.dto";
 import { TransactionsService } from "./transaction.service";
 import { ContractMethodAllowlistGuard } from "../contracts/contract-method-allowlist.guard";
+import {
+  IdempotencyInterceptor,
+  IDEMPOTENCY_KEY_HEADER,
+} from "../common/idempotency/idempotency.interceptor";
 
 function correlationIdOf(req: Request): string | undefined {
   return (req as unknown as Record<string, unknown>)["correlationId"] as
@@ -40,7 +50,14 @@ function correlationIdOf(req: Request): string | undefined {
   description: "Optional API key for higher rate limits",
   required: false,
 })
+@ApiHeader({
+  name: IDEMPOTENCY_KEY_HEADER,
+  description:
+    "Optional. Supply a unique key to make this mutation idempotent: retries with the same key and body return the original response; reuse with a different body is rejected.",
+  required: false,
+})
 @UseGuards(ApiKeyGuard)
+@UseInterceptors(IdempotencyInterceptor)
 @Controller("transactions")
 export class TransactionsController {
   constructor(
@@ -90,6 +107,10 @@ export class TransactionsController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(NetworkSafetyGuard, ContractMethodAllowlistGuard)
   @RequiresFlag(TESTNET_CONTRACT_WRITES_FLAG)
+  @EmergencyClassification(
+    "blocked",
+    "Composes a Soroban contract write transaction; must be halted during an incident to prevent on-chain mutations.",
+  )
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async compose(@Body() dto: ComposeTransactionDto, @Req() req: Request) {
     const result = await this.transactionService.composeTransaction(dto);
@@ -100,11 +121,19 @@ export class TransactionsController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(NetworkSafetyGuard, ContractMethodAllowlistGuard)
   @RequiresFlag(TESTNET_CONTRACT_WRITES_FLAG)
+  @EmergencyClassification(
+    "blocked",
+    "Builds unsigned Soroban XDR — same write pipeline as compose; blocked during emergency.",
+  )
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   @ApiOperation({
-    summary: "Build unsigned Soroban transaction XDR with canonical memo/params",
+    summary:
+      "Build unsigned Soroban transaction XDR with canonical memo/params",
   })
-  async buildUnsignedXdr(@Body() dto: ComposeTransactionDto, @Req() req: Request) {
+  async buildUnsignedXdr(
+    @Body() dto: ComposeTransactionDto,
+    @Req() req: Request,
+  ) {
     const result = await this.transactionService.composeTransaction(dto);
     return { ...result, correlationId: correlationIdOf(req) };
   }
@@ -113,11 +142,18 @@ export class TransactionsController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(NetworkSafetyGuard, ContractMethodAllowlistGuard)
   @RequiresFlag(TESTNET_CONTRACT_WRITES_FLAG)
+  @EmergencyClassification(
+    "blocked",
+    "Simulates contract operations via Soroban RPC; submits to the RPC network, must stop when the kill switch fires.",
+  )
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   @ApiOperation({
     summary: "Simulate contract operations with deterministic failure reasons",
   })
-  async simulateOperation(@Body() dto: SimulateOperationDto, @Req() req: Request) {
+  async simulateOperation(
+    @Body() dto: SimulateOperationDto,
+    @Req() req: Request,
+  ) {
     const result = await this.transactionService.simulateOperation(dto);
     return { ...result, correlationId: correlationIdOf(req) };
   }
@@ -126,6 +162,10 @@ export class TransactionsController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(NetworkSafetyGuard)
   @RequiresFlag(TESTNET_CONTRACT_WRITES_FLAG)
+  @EmergencyClassification(
+    "blocked",
+    "Submits a signed transaction to the Stellar network — highest-risk write; must be blocked immediately on emergency.",
+  )
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   @ApiOperation({
     summary: "Submit an already-signed transaction with idempotency support",
